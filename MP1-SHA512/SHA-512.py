@@ -18,23 +18,18 @@ import sys
 
 class SHA_512:
     def __init__(self, input_file_name, verbose_mode_active=False):
-        self._reset()
         self._set_verbose_mode(verbose_mode_active)
+        self._reset()
         self.open_file(input_file_name)
 
     def _set_registers(self, values):
-        registers =\
-        {
-            'a': values[0],
-            'b': values[1],
-            'c': values[2],
-            'd': values[3],
-            'e': values[4],
-            'f': values[5],
-            'g': values[6],
-            'h': values[7]
-        }
-        return registers
+        index = 0
+        for key in self._registers:
+            self._registers[key] = values[index]
+            index += 1
+
+        log = 'Registers have been set: ', [(key, hex(self._registers[key])) for key in self._registers]
+        self._print(log, severity='DBG', prefix='\t')
 
     def _reset(self):
         self._input_file_name = None
@@ -66,7 +61,8 @@ class SHA_512:
             0x5be0cd19137e2179
         ]
 
-        self._registers = self._set_registers(self._hash)
+        self._registers = {'a':0, 'b':0, 'c':0, 'd':0, 'e':0, 'g':0, 'g':0, 'h':0}
+        self._set_registers(self._hash)
 
         self._K = \
         [
@@ -228,12 +224,23 @@ class SHA_512:
             sums.append(list1[i] + list2[i])
         return sums
 
-    def _update_registers(self, W):
-        T1 = self._registers[7]
+    def _update_registers(self, K, W):
+        T1 = self._registers['h'] + self._bigsigma1(self._registers['e']) +\
+             self._Ch(self._registers['e'], self._registers['f'], self._registers['g']) + K + W
+        #TODO
+
+    def _compute_expanded_msgblocks(self, msg_block):
+        W = []
+        #TODO
+        return W
+
     def _compute_hash_for_msgblock(self, msg_block):
         log = 'CURRENT HASH VALUE(BEFORE COMPUTE):', [hex(x) for x in self._hash]
         self._print(log, prefix='\t')
-        self._registers = self._set_registers(self._hash)
+
+        W = self._compute_expanded_msgblocks(msg_block)
+
+        self._set_registers(self._hash)
 
         self._hash = self._sum_list(self._hash, list(self._registers.values()))
         log = 'CURRENT HASH VALUE(AFTER COMPUTE):', [hex(x) for x in self._hash]
@@ -247,7 +254,9 @@ class SHA_512:
             self._print('Processing Block#%d'%(current_block_num))
             current_msg_block = self._read_message_block()
             self._print_msgblk(current_msg_block)
+
             self._compute_hash_for_msgblock(current_msg_block)
+
             self._print('Processing Block#%d: done!'%(current_block_num))
             current_block_num += 1
 
