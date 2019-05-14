@@ -112,7 +112,8 @@ class SHA_512:
 
     def _bitrotate_right(self, x, bits):
         NUM_INT_BITS = 64
-        return (x >> bits) | (x << (NUM_INT_BITS - bits))
+        INT_MASK = (2**NUM_INT_BITS) - 1
+        return ((x >> bits) | (x << (NUM_INT_BITS - bits))) & INT_MASK
 
     def _bigsigma0(self, x):
         return self._bitrotate_right(x, 28) ^ self._bitrotate_right(x, 34) ^ self._bitrotate_right(x, 39)
@@ -121,6 +122,7 @@ class SHA_512:
         return self._bitrotate_right(x, 14) ^ self._bitrotate_right(x, 18) ^ self._bitrotate_right(x, 41)
 
     def _sigma0(self, x):
+        # print('SIGMA0: x=%#x ; ROT1(x)=%#x ; ROT8(x)=%#x ; x>>7=%#x' % (x,self._bitrotate_right(x, 1), self._bitrotate_right(x, 8), (x >> 7)))
         return self._bitrotate_right(x, 1) ^ self._bitrotate_right(x, 8) ^ (x >> 7)
 
     def _sigma1(self, x):
@@ -224,23 +226,36 @@ class SHA_512:
             sums.append(list1[i] + list2[i])
         return sums
 
-    def _update_registers(self, K, W):
-        T1 = self._registers['h'] + self._bigsigma1(self._registers['e']) +\
-             self._Ch(self._registers['e'], self._registers['f'], self._registers['g']) + K + W
-        #TODO
+    def _compute_updated_register_values(self, K, W):
+        a=0; b=0; c=0; d=0; e=0; f=0; g=0; h=0
+        for j in range(0, 80):
+            T1 = self._registers['h'] + self._bigsigma1(self._registers['e']) +\
+                 self._Ch(self._registers['e'], self._registers['f'], self._registers['g']) + K[j] + W[j]
+
+            #TODO
+
+        return [a, b, c, d, e, f, h]
 
     def _compute_expanded_msgblocks(self, msg_block):
-        W = []
-        #TODO
+        W = [0]*80
+        for i in range(0, 16):
+            W[i] = int.from_bytes(msg_block[i], byteorder=self._BYTE_ORDER)
+
+        for j in range(16, 80):
+            W[j] = self._sigma1(W[j-2]) + W[j-7] + self._sigma0(W[j-15]) + W[j-16]
+
+        self._print('W:'+str([hex(x) for x in W]), prefix='\t')
         return W
 
     def _compute_hash_for_msgblock(self, msg_block):
         log = 'CURRENT HASH VALUE(BEFORE COMPUTE):', [hex(x) for x in self._hash]
         self._print(log, prefix='\t')
 
+        ''' INITIALIZE '''
+        self._set_registers(self._hash)
         W = self._compute_expanded_msgblocks(msg_block)
 
-        self._set_registers(self._hash)
+        self._set_registers(self._compute_updated_register_values(self._K, W))
 
         self._hash = self._sum_list(self._hash, list(self._registers.values()))
         log = 'CURRENT HASH VALUE(AFTER COMPUTE):', [hex(x) for x in self._hash]
