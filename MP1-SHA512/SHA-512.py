@@ -16,6 +16,9 @@ import numpy as np
 import os
 import sys
 
+NUM_INT_BITS = 64
+INT_MASK = (2**NUM_INT_BITS) - 1
+
 class SHA_512:
     def __init__(self, input_file_name, verbose_mode_active=False):
         self._set_verbose_mode(verbose_mode_active)
@@ -98,25 +101,34 @@ class SHA_512:
             print('%s%s: %s' % (prefix, severity, to_print))
 
     def _print_msgblk(self, msg_blk):
-        print(msg_blk)
-        self._print('Displaying current message block:', severity='DBG')
+        self._print('Displaying current message block:', severity='DBG', prefix='\t')
         for msg_blkgrp_num, msg_blkgrp in enumerate(msg_blk):
             self._print('MSG BLKGRP #%d (%d bytes):' % (msg_blkgrp_num, len(msg_blkgrp)) + str(binascii.hexlify(msg_blkgrp)),
-                        prefix='\t', severity='DBG')
-    ''' SIX LOGICAL FUNCTIONS AS DEFNINED IN SHA-512 DOCUMENT'''
+                        prefix='\t\t', severity='DBG')
+    ''' SIX LOGICAL FUNCTIONS AS DEFINED IN SHA-512 DOCUMENT + OTHER BIT-WISE OPERATIONS'''
+    def _mod64Add(self, operands):
+        sum = 0
+        for operand in operands:
+            sum = (sum + operand) & INT_MASK
+        return sum
+
     def _Ch(self, x, y, z):
+        # print('Ch: x=%d, y=%d, z=%d' % (x, y, z))
         return (x & y) ^ (~x & z)
 
     def _Maj(self, x, y, z):
         return (x & y) ^ (x & z) ^ (y & z)
 
     def _bitrotate_right(self, x, bits):
-        NUM_INT_BITS = 64
-        INT_MASK = (2**NUM_INT_BITS) - 1
         return ((x >> bits) | (x << (NUM_INT_BITS - bits))) & INT_MASK
 
     def _bigsigma0(self, x):
-        return self._bitrotate_right(x, 28) ^ self._bitrotate_right(x, 34) ^ self._bitrotate_right(x, 39)
+        xROT28 = self._bitrotate_right(x, 28)
+        xROT34 = self._bitrotate_right(x, 34)
+        xROT39 = self._bitrotate_right(x, 39)
+        ANS = xROT28 ^ xROT34 ^ xROT39
+        # print('BigSigma0:\n\tx     ={0:064b}\n\txROT28={1:064b}\n\txROT34={2:064b}\n\txROT39={3:064b}\n\tANS   ={4:064b}'.format(x, xROT28, xROT34, xROT39, ANS))
+        return ANS
 
     def _bigsigma1(self, x):
         return self._bitrotate_right(x, 14) ^ self._bitrotate_right(x, 18) ^ self._bitrotate_right(x, 41)
@@ -207,10 +219,8 @@ class SHA_512:
                         self._pad_message(blkgrp_data, msg_blkgrp_num, self._input_file_size_in_bytes << 3)
                     msg_blk += padded_remaining_msg_blkgrps
                     if pad_and_msglen_blk:
-                        print('Left-over pad bits set')
                         self._pad_and_msglen_blk = pad_and_msglen_blk
                     else:
-                        print('EOF reached')
                         self._eof_reached = True
                     break
                 msg_blk.append(blkgrp_data)
@@ -223,24 +233,35 @@ class SHA_512:
         num_elements = min(len(list1), len(list2))
         sums = []
         for i in range(0, num_elements):
-            sums.append(list1[i] + list2[i])
+            sums.append(self._mod64Add([list1[i], list2[i]]))
+            self._print('list1[{0}]={1:016x}, list2[{0}]={2:016x}, sums[{0}]={3:016x}'.format(i, list1[i], list2[i], sums[i]), prefix='\t\t\t', severity='DBG')
         return sums
 
     def _compute_updated_register_values(self, K, W):
         for j in range(0, 80):
-            T1 = self._registers['h'] + self._bigsigma1(self._registers['e']) +\
-                 self._Ch(self._registers['e'], self._registers['f'], self._registers['g']) +\
-                 K[j] + W[j]
+            T1 = self._mod64Add([self._registers['h'] ,self._bigsigma1(self._registers['e']),\
+                 self._Ch(self._registers['e'], self._registers['f'], self._registers['g']),\
+                 K[j],W[j]])
+            # print('T1:  \n\th\t={0:064b}'\
+            #       '     \n\tbigsig1(e)={1:064b}'\
+            #       '     \n\tCh(e, f, g)={2:064b}'\
+            #       '     \n\tK({3})      ={4:064b}'\
+            #       '     \n\tW({3})      ={5:064b}'\
+            #       '     \n\tT1         ={6:064b}'.format(self._registers['h'],
+            #                                        self._bigsigma1(self._registers['e']),
+            #                                        self._Ch(self._registers['e'], self._registers['f'], self._registers['g']),
+            #                                        j, K[j], W[j], T1)
+            #       )
             T2 = self._bigsigma0(self._registers['a']) +\
                  self._Maj(self._registers['a'], self._registers['b'], self._registers['c'])
             self._registers['h'] = self._registers['g']
             self._registers['g'] = self._registers['f']
             self._registers['f'] = self._registers['e']
-            self._registers['e'] = self._registers['d'] + T1
+            self._registers['e'] = self._mod64Add([self._registers['d'], T1])
             self._registers['d'] = self._registers['c']
             self._registers['c'] = self._registers['b']
             self._registers['b'] = self._registers['a']
-            self._registers['a'] = T1 + T2
+            self._registers['a'] = self._mod64Add([T1, T2])
 
             log = 'Iteration=%d Register values:' % (j), [(key, hex(self._registers[key])) for key in self._registers]
             self._print(log, severity='DBG', prefix='\t\t')
@@ -251,15 +272,13 @@ class SHA_512:
             W[i] = int.from_bytes(msg_block[i], byteorder=self._BYTE_ORDER)
 
         for j in range(16, 80):
-            W[j] = self._sigma1(W[j-2]) + W[j-7] + self._sigma0(W[j-15]) + W[j-16]
+            W[j] = self._mod64Add([self._sigma1(W[j-2]), W[j-7],
+                                   self._sigma0(W[j-15]), W[j-16]])
 
-        self._print('W:'+str([hex(x) for x in W]), prefix='\t')
+        self._print('W:'+str([hex(x) for x in W]), prefix='\t', severity='DBG')
         return W
 
     def _compute_hash_for_msgblock(self, msg_block):
-        log = 'CURRENT HASH VALUE FOR MSG BLOCK (BEFORE COMPUTE):', [hex(x) for x in self._hash]
-        self._print(log, prefix='\t')
-
         ''' INITIALIZE '''
         self._set_registers(self._hash)
         W = self._compute_expanded_msgblocks(msg_block)
@@ -267,25 +286,30 @@ class SHA_512:
         self._compute_updated_register_values(self._K, W)
 
         self._hash = self._sum_list(self._hash, list(self._registers.values()))
-        log = 'CURRENT HASH VALUE FOR MSSG BLOCK(AFTER COMPUTE):', [hex(x) for x in self._hash]
-        self._print(log, prefix='\t')
 
+    def _get_hash_string(self):
+        hash_string = ''
+        for value in self._hash:
+            hash_string += '{0:016x}'.format(value)
+
+        return hash_string
 
     def compute(self):
         current_block_num = 1
         while(self._eof_reached == False):
-            print('\n\n')
-            self._print('Processing Block#%d'%(current_block_num))
+            self._print('Processing MessageBlock#%d'%(current_block_num), prefix='\t')
             current_msg_block = self._read_message_block()
             self._print_msgblk(current_msg_block)
 
+            self._print('Computing hash for MessageBlock#%d: START' % (current_block_num), prefix='\n\t', severity='DBG')
             self._compute_hash_for_msgblock(current_msg_block)
+            log = 'Current hash value for MessageBlock#%d:' % (current_block_num), [hex(x) for x in self._hash]
+            self._print(log, prefix='\t')
 
-            self._print('Processing Block#%d: done!'%(current_block_num))
             current_block_num += 1
 
-        self._reset()
         self._input_file_handler.close()
+        return self._get_hash_string()
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
@@ -295,4 +319,16 @@ if __name__ == '__main__':
 
     input_file_name = args.input_file
     hasher = SHA_512(input_file_name, args.verbose_mode)
-    hasher.compute()
+    hash = hasher.compute()
+
+    print('\n\n SHA-512 result:\n %s' % (hash))
+
+    # x = int('10101', base=2)
+    # y = int('01001', base=2)
+    # z = int('00100', base=2)
+    #
+    # ans = hasher._Ch(x, y, z)
+    # print(hex(ans))
+    #
+    # ans = hasher._bigsigma0(x)
+    # print(hex(ans))
