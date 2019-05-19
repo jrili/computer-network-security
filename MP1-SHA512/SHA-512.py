@@ -12,9 +12,8 @@ REQUIREMENTS:
 '''
 import binascii
 import argparse
-import numpy as np
 import os
-import sys
+import time
 
 NUM_INT_BITS = 64
 INT_MASK = (2**NUM_INT_BITS) - 1
@@ -152,7 +151,7 @@ class SHA_512:
         else:
             self._print('Specified Input File "%s" not found!' % input_file_name, severity='ERR')
 
-    def _pad_message(self, current_blkgrp_data, current_blkgrp_num, total_msg_len):
+    def _pad_message(self, current_blkgrp_data, current_blkgrp_num):
 
         inputfilesize_bytes = bytearray(self._input_file_size_in_bits.to_bytes(self._MSGLEN_SIZE_IN_BYTES,
                                                                                byteorder=self._BYTE_ORDER))
@@ -216,7 +215,7 @@ class SHA_512:
                 if len(blkgrp_data) < self._MSG_BLKGRP_SIZE_IN_BYTES:
                     self._print('Generating pad bits...', severity='DBG', prefix='\t')
                     padded_remaining_msg_blkgrps, pad_and_msglen_blk = \
-                        self._pad_message(blkgrp_data, msg_blkgrp_num, self._input_file_size_in_bytes << 3)
+                        self._pad_message(blkgrp_data, msg_blkgrp_num)
                     msg_blk += padded_remaining_msg_blkgrps
                     if pad_and_msglen_blk:
                         self._pad_and_msglen_blk = pad_and_msglen_blk
@@ -242,16 +241,6 @@ class SHA_512:
             T1 = self._mod64Add([self._registers['h'] ,self._bigsigma1(self._registers['e']),\
                  self._Ch(self._registers['e'], self._registers['f'], self._registers['g']),\
                  K[j],W[j]])
-            # print('T1:  \n\th\t={0:064b}'\
-            #       '     \n\tbigsig1(e)={1:064b}'\
-            #       '     \n\tCh(e, f, g)={2:064b}'\
-            #       '     \n\tK({3})      ={4:064b}'\
-            #       '     \n\tW({3})      ={5:064b}'\
-            #       '     \n\tT1         ={6:064b}'.format(self._registers['h'],
-            #                                        self._bigsigma1(self._registers['e']),
-            #                                        self._Ch(self._registers['e'], self._registers['f'], self._registers['g']),
-            #                                        j, K[j], W[j], T1)
-            #       )
             T2 = self._bigsigma0(self._registers['a']) +\
                  self._Maj(self._registers['a'], self._registers['b'], self._registers['c'])
             self._registers['h'] = self._registers['g']
@@ -295,6 +284,10 @@ class SHA_512:
         return hash_string
 
     def compute(self):
+        '''
+        :return: string of SHA-512 hash values of input file
+        '''
+        start_time = time.time()
         current_block_num = 1
         while(self._eof_reached == False):
             self._print('Processing MessageBlock#%d'%(current_block_num), prefix='\t')
@@ -309,6 +302,11 @@ class SHA_512:
             current_block_num += 1
 
         self._input_file_handler.close()
+
+        elapsed_time = time.time() - start_time
+        self._print('SHA-512 computation of %d-byte input file took %d minutes %.7f seconds' %
+                    (self._input_file_size_in_bytes, elapsed_time/60, elapsed_time%60), prefix='\n')
+
         return self._get_hash_string()
 
 if __name__ == '__main__':
@@ -322,13 +320,3 @@ if __name__ == '__main__':
     hash = hasher.compute()
 
     print('\n\n SHA-512 result:\n %s' % (hash))
-
-    # x = int('10101', base=2)
-    # y = int('01001', base=2)
-    # z = int('00100', base=2)
-    #
-    # ans = hasher._Ch(x, y, z)
-    # print(hex(ans))
-    #
-    # ans = hasher._bigsigma0(x)
-    # print(hex(ans))
