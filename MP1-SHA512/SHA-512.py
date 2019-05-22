@@ -1,15 +1,17 @@
 '''
 EE298 K - COMPUTER NETWORK SECURITY
-SHA-512 IMPLEMENTATION
+2sAY2018-2019
+IMPLEMENTING SHA-512
 
 CODE SUBMITTED BY:
-JESSA RILI
 KIRSTEN HIPOLITO
 KARYN MAGLALANG
+JESSA RILI
 
 REQUIREMENTS:
     python 3.6.x
 '''
+
 import binascii
 import argparse
 import os
@@ -43,8 +45,8 @@ class SHA_512:
         self._MSG_BLKGRP_SIZE_IN_BITS = 64
         self._MSG_BLKGRP_SIZE_IN_BYTES = self._MSG_BLKGRP_SIZE_IN_BITS >> 3
         self._NUM_MSGBLKGRPS_PER_MSGBLK = int(self._MSG_BLK_SIZE_IN_BITS / self._MSG_BLKGRP_SIZE_IN_BITS)
-        self._MSGLEN_SIZE_IN_BITS = 128
-        self._MSGLEN_SIZE_IN_BYTES = self._MSGLEN_SIZE_IN_BITS >> 3
+        self._INPUTLEN_SIZE_IN_BITS = 128
+        self._INPUTLEN_SIZE_IN_BYTES = self._INPUTLEN_SIZE_IN_BITS >> 3
 
         ''' Last block containing 112B of 0's and the 16B (128bits) of total msg len in bits '''
         self._pad_and_msglen_blk = []
@@ -105,9 +107,9 @@ class SHA_512:
             self._print('MSG BLKGRP #%d (%d bytes):' % (msg_blkgrp_num, len(msg_blkgrp)) + str(binascii.hexlify(msg_blkgrp)),
                         prefix='\t\t', severity='DBG')
     ''' SIX LOGICAL FUNCTIONS AS DEFINED IN SHA-512 DOCUMENT + OTHER BIT-WISE OPERATIONS'''
-    def _mod64Add(self, operands):
+    def _mod64Add(self, addends):
         sum = 0
-        for operand in operands:
+        for operand in addends:
             sum = (sum + operand) & INT_MASK
         return sum
 
@@ -126,14 +128,12 @@ class SHA_512:
         xROT34 = self._bitrotate_right(x, 34)
         xROT39 = self._bitrotate_right(x, 39)
         ANS = xROT28 ^ xROT34 ^ xROT39
-        # print('BigSigma0:\n\tx     ={0:064b}\n\txROT28={1:064b}\n\txROT34={2:064b}\n\txROT39={3:064b}\n\tANS   ={4:064b}'.format(x, xROT28, xROT34, xROT39, ANS))
         return ANS
 
     def _bigsigma1(self, x):
         return self._bitrotate_right(x, 14) ^ self._bitrotate_right(x, 18) ^ self._bitrotate_right(x, 41)
 
     def _sigma0(self, x):
-        # print('SIGMA0: x=%#x ; ROT1(x)=%#x ; ROT8(x)=%#x ; x>>7=%#x' % (x,self._bitrotate_right(x, 1), self._bitrotate_right(x, 8), (x >> 7)))
         return self._bitrotate_right(x, 1) ^ self._bitrotate_right(x, 8) ^ (x >> 7)
 
     def _sigma1(self, x):
@@ -153,17 +153,17 @@ class SHA_512:
 
     def _pad_message(self, current_blkgrp_data, current_blkgrp_num):
 
-        inputfilesize_bytes = bytearray(self._input_file_size_in_bits.to_bytes(self._MSGLEN_SIZE_IN_BYTES,
+        inputfilesize_bytes = bytearray(self._input_file_size_in_bits.to_bytes(self._INPUTLEN_SIZE_IN_BYTES,
                                                                                byteorder=self._BYTE_ORDER))
         log = 'INPUTFILESIZE "L=%d" IN MSG: ' % (self._input_file_size_in_bits), inputfilesize_bytes
         self._print(log, severity='INF', prefix='\t')
 
-        pad_len_in_bytes = self._MSG_BLK_SIZE_IN_BYTES - self._MSGLEN_SIZE_IN_BYTES
+        pad_len_in_bytes = self._MSG_BLK_SIZE_IN_BYTES - self._INPUTLEN_SIZE_IN_BYTES
         current_remaining_num_blkgrp = self._NUM_MSGBLKGRPS_PER_MSGBLK - current_blkgrp_num
 
-        if current_remaining_num_blkgrp*self._MSG_BLKGRP_SIZE_IN_BYTES > (self._MSGLEN_SIZE_IN_BYTES + 1):
+        if current_remaining_num_blkgrp*self._MSG_BLKGRP_SIZE_IN_BYTES > (self._INPUTLEN_SIZE_IN_BYTES + 1):
             ''' Append pad bits to this current msg block'''
-            pad_len_in_bytes -= (self._NUM_MSGBLKGRPS_PER_MSGBLK - current_remaining_num_blkgrp)*self._MSG_BLKGRP_SIZE_IN_BYTES + len(current_blkgrp_data)
+            pad_len_in_bytes -= (current_blkgrp_num)*self._MSG_BLKGRP_SIZE_IN_BYTES + len(current_blkgrp_data)
         else:
             ''' Need to create a separate msg block for the pad bits alone'''
             pad_len_in_bytes += current_remaining_num_blkgrp * self._MSG_BLKGRP_SIZE_IN_BYTES - len(current_blkgrp_data)
